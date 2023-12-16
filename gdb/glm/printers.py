@@ -1,9 +1,9 @@
 import gdb
 import re
 
-def is_vec(type_name):
+def is_vec(type):
     pattern = re.compile(r'glm::vec<([2-4]),\s*(float|double|int|unsigned int|bool),\s*(.*?)>')
-    match = pattern.match(type_name)
+    match = pattern.match(str(type))
     return bool(match)
 
 def vec_info(val):
@@ -13,9 +13,14 @@ def vec_info(val):
     elements = [format_value(val[indices[i]]) for i in range(n)]
     return n, elements
 
-def is_mat(type_name):
+def is_mat(type):
     pattern = re.compile(r'glm::mat<([2-4]),\s*([2-4]),\s*(float|double|int|unsigned int|bool),\s*(.*?)>')
-    match = pattern.match(type_name)
+    match = pattern.match(str(type))
+    return bool(match)
+
+def is_quat(type):
+    pattern = re.compile(r'glm::qua<(float|double),\s*(.*?)>')
+    match = pattern.match(str(type))
     return bool(match)
 
 def format_value(value):
@@ -47,28 +52,36 @@ class MatPrinter:
   def display_hint(self):
     return 'array'
 
+class QuatPrinter:
+  def __init__(self, val):
+    self.val = val
+  def to_string(self):
+    x = format_value(self.val['x'])
+    y = format_value(self.val['y'])
+    z = format_value(self.val['z'])
+    w = format_value(self.val['w'])
+    return f"Quaternion [{x}, {y}, {z}, {w}]"
+
+
 def glm_types_printer(val):
   if val.address == 0 or val.is_optimized_out:
     return "invalid or optimized out"
 
-  val_type = str(val.type.strip_typedefs())
-  print(f"val_type = {val_type}")
+  if not 'glm::' in str(val.type):
+    return None
 
-  # if not 'glm::' in val_type:
-  #   return None
+  if val.type.code == gdb.TYPE_CODE_PTR or val.type.code == gdb.TYPE_CODE_REF:
+    val = val.dereference()
 
-  # if val_type.endswith('*'):
-  #   return None # we do not want to dereference pointers
-  #   # val = val.dereference() # if we do, call this
-  # if val_type.endswith('&'):
-  #   val = val.dereference()
-  # if val_type.startswith('const'):
-  #   val = val.unqualified()
+  val_type = val.type.unqualified().strip_typedefs()
+  val = val.cast(val_type)
 
   if is_vec(val_type):
     return VecPrinter(val)
   elif is_mat(val_type):
     return MatPrinter(val)
+  elif is_quat(val_type):
+    return QuatPrinter(val)
 
   return None
 
